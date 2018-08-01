@@ -29,7 +29,7 @@
   - [模拟实现 call 和 apply](#%E6%A8%A1%E6%8B%9F%E5%AE%9E%E7%8E%B0-call-%E5%92%8C-apply)
 - [Promise 实现](#promise-%E5%AE%9E%E7%8E%B0)
 - [Generator 实现](#generator-%E5%AE%9E%E7%8E%B0)
-- [Map、FlapMap 和 Reduce](#mapflapmap-%E5%92%8C-reduce)
+- [Map、FlatMap 和 Reduce](#mapflatmap-%E5%92%8C-reduce)
 - [async 和 await](#async-%E5%92%8C-await)
 - [Proxy](#proxy)
 - [为什么 0.1 + 0.2 != 0.3](#%E4%B8%BA%E4%BB%80%E4%B9%88-01--02--03)
@@ -37,6 +37,9 @@
   - [元字符](#%E5%85%83%E5%AD%97%E7%AC%A6)
   - [修饰语](#%E4%BF%AE%E9%A5%B0%E8%AF%AD)
   - [字符简写](#%E5%AD%97%E7%AC%A6%E7%AE%80%E5%86%99)
+- [V8 下的垃圾回收机制](#v8-%E4%B8%8B%E7%9A%84%E5%9E%83%E5%9C%BE%E5%9B%9E%E6%94%B6%E6%9C%BA%E5%88%B6)
+  - [新生代算法](#%E6%96%B0%E7%94%9F%E4%BB%A3%E7%AE%97%E6%B3%95)
+  - [老生代算法](#%E8%80%81%E7%94%9F%E4%BB%A3%E7%AE%97%E6%B3%95)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
@@ -99,7 +102,7 @@ PS：为什么会出现这种情况呢？因为在 JS 的最初版本中，使�
 let a
 // 我们也可以这样判断 undefined
 a === undefined
-// 但是 undefined 保留字，能够在低版本浏览器被赋值
+// 但是 undefined 不是保留字，能够在低版本浏览器被赋值
 let undefined = 1
 // 这样判断就会出错
 // 所以可以用下面的方式来判断，并且代码量更少
@@ -112,7 +115,7 @@ a === void 0
 
 ## 转Boolean
 
-除了 `undefined`， `null`， `false`， `NaN`， `''`， `0`， `-0`，其他所有值都转为 `true`，包括所有对象。
+在条件判断时，除了 `undefined`， `null`， `false`， `NaN`， `''`， `0`， `-0`，其他所有值都转为 `true`，包括所有对象。
 
 ## 对象转基本类型
 
@@ -124,6 +127,24 @@ let a = {
     	return 0
     }
 }
+```
+
+当然你也可以重写 `Symbol.toPrimitive` ，该方法在转基本类型时调用优先级最高。
+
+```js
+let a = {
+  valueOf() {
+    return 0;
+  },
+  toString() {
+    return '1';
+  },
+  [Symbol.toPrimitive]() {
+    return 2;
+  }
+}
+1 + a // => 3
+'1' + a // => '12'
 ```
 
 ## 四则运算符
@@ -152,8 +173,6 @@ let a = {
 ![](https://user-gold-cdn.xitu.io/2018/3/30/16275f89ebf931e9)
 
 上图中的 `toPrimitive` 就是对象转基本类型。
-
-一般推荐使用 `===` 判断两个值，但是你如果想知道一个值是不是 `null` ，你可以通过 `xx == null` 来比较。
 
 这里来解析一道题目 `[] == ![] // -> true` ，下面是这个表达式为何为 `true` 的步骤
 
@@ -282,7 +301,7 @@ function instanceof(left, right) {
 function foo() {
 	console.log(this.a)
 }
-var a = 2
+var a = 1
 foo()
 
 var obj = {
@@ -489,8 +508,6 @@ for ( var i=1; i<=5; i++) {
 }
 ```
 
-因为对于 `let` 来说
-
 第三种就是使用 `let` 定义  `i` 了
 
 ```js
@@ -636,7 +653,7 @@ console.log(b) // {name: "yck"}
 
 你会发现在上述情况中，该方法会忽略掉函数和 `undefined` 。
 
-但是在通常情况下，复杂数据都是可以序列化的，所以这个函数可以解决大部分问题，并且该函数是内置函数中处理深拷贝性能最快的。当然如果你的数据中含有以上三种情况下，可以使用 [loadash 的深拷贝函数](https://lodash.com/docs#cloneDeep)。
+但是在通常情况下，复杂数据都是可以序列化的，所以这个函数可以解决大部分问题，并且该函数是内置函数中处理深拷贝性能最快的。当然如果你的数据中含有以上三种情况下，可以使用 [lodash 的深拷贝函数](https://lodash.com/docs#cloneDeep)。
 
 如果你所需拷贝的对象含有内置类型并且不包含函数，可以使用 `MessageChannel`
 
@@ -1014,9 +1031,9 @@ Function.prototype.myBind = function (context) {
   return function F() {
     // 因为返回了一个函数，我们可以 new F()，所以需要判断
     if (this instanceof F) {
-      return new _this(args, ...arguments)
+      return new _this(...args, ...arguments)
     }
-    return _this.apply(context, args.concat(arguments))
+    return _this.apply(context, args.concat(...arguments))
   }
 }
 ```
@@ -1274,7 +1291,7 @@ function test() {
 }
 ```
 
-# Map、FlapMap 和 Reduce
+# Map、FlatMap 和 Reduce
 
 `Map` 作用是生成一个新数组，遍历原数组，将每个元素拿出来做一些变换然后 `append` 到新的数组中。
 
@@ -1292,7 +1309,7 @@ function test() {
 //  parseInt('3', 2) -> NaN
 ```
 
-`FlapMap` 和 `map` 的作用几乎是相同的，但是对于多维数组来说，会将原数组降维。可以将 `FlapMap` 看成是 `map` + `flatten` ，目前该函数在浏览器中还不支持。
+`FlatMap` 和 `map` 的作用几乎是相同的，但是对于多维数组来说，会将原数组降维。可以将 `FlatMap` 看成是 `map` + `flatten` ，目前该函数在浏览器中还不支持。
 
 ```js
 [1, [2], 3].flatMap((v) => v + 1)
@@ -1303,7 +1320,7 @@ function test() {
 
 ```js
 const flattenDeep = (arr) => Array.isArray(arr)
-  ? arr.reduce( (a, b) => [...flattenDeep(a), ...flattenDeep(b)] , [])
+  ? arr.reduce( (a, b) => [...a, ...flattenDeep(b)] , [])
   : [arr]
 
 flattenDeep([1, [[2], [3, [4]], 5]])
@@ -1332,7 +1349,7 @@ function b() {
 async function test() {
   return "1";
 }
-console.log(sync()); // -> Promise {<resolved>: "1"}
+console.log(test()); // -> Promise {<resolved>: "1"}
 ```
 
 可以把 `async` 看成将函数返回值使用 `Promise.resolve()` 包裹了下。
@@ -1450,7 +1467,7 @@ parseFloat((0.1 + 0.2).toFixed(10))
 
 | 元字符 |                             作用                             |
 | :----: | :----------------------------------------------------------: |
-|   .    |                    匹配任意字符除了换行符                    |
+|   .    |                    匹配任意字符除了换行符和回车符                    |
 |   []   |  匹配方括号内的任意字符。比如 [0-9] 就可以用来匹配任意数字   |
 |   ^    | ^9，这样使用代表匹配以 9 开头。[`^`9]，这样使用代表不匹配方括号内除了 9 的字符 |
 | {1, 2} |                      匹配 1 到 2 位字符                      |
@@ -1471,14 +1488,62 @@ parseFloat((0.1 + 0.2).toFixed(10))
 
 ## 字符简写
 
-| 简写 |            作用            |
-| :--: | :------------------------: |
-|  \w  | 匹配字母数字或下划线或汉字 |
-|  \W  |         和上面相反         |
-|  \s  |      匹配任意的空白符      |
-|  \S  |         和上面相反         |
-|  \d  |          匹配数字          |
-|  \D  |         和上面相反         |
-|  \b  |    匹配单词的开始或结束    |
-|  \B  |         和上面相反         |
+| 简写 |         作用         |
+| :--: | :------------------: |
+|  \w  | 匹配字母数字或下划线 |
+|  \W  |      和上面相反      |
+|  \s  |   匹配任意的空白符   |
+|  \S  |      和上面相反      |
+|  \d  |       匹配数字       |
+|  \D  |      和上面相反      |
+|  \b  | 匹配单词的开始或结束 |
+|  \B  |      和上面相反      |
 
+# V8 下的垃圾回收机制
+
+V8 实现了准确式 GC，GC 算法采用了分代式垃圾回收机制。因此，V8 将内存（堆）分为新生代和老生代两部分。
+
+## 新生代算法
+
+新生代中的对象一般存活时间较短，使用 Scavenge GC 算法。
+
+在新生代空间中，内存空间分为两部分，分别为 From 空间和 To 空间。在这两个空间中，必定有一个空间是使用的，另一个空间是空闲的。新分配的对象会被放入 From 空间中，当 From 空间被占满时，新生代 GC 就会启动了。算法会检查 From 空间中存活的对象并复制到 To 空间中，如果有失活的对象就会销毁。当复制完成后将 From 空间和 To 空间互换，这样 GC 就结束了。
+
+## 老生代算法
+
+老生代中的对象一般存活时间较长且数量也多，使用了两个算法，分别是标记清除算法和标记压缩算法。
+
+在讲算法前，先来说下什么情况下对象会出现在老生代空间中：
+
+- 新生代中的对象是否已经经历过一次 Scavenge 算法，如果经历过的话，会将对象从新生代空间移到老生代空间中。
+- To 空间的对象占比大小超过 25 %。在这种情况下，为了不影响到内存分配，会将对象从新生代空间移到老生代空间中。
+
+老生代中的空间很复杂，有如下几个空间
+
+```c++
+enum AllocationSpace {
+  // TODO(v8:7464): Actually map this space's memory as read-only.
+  RO_SPACE,    // 不变的对象空间
+  NEW_SPACE,   // 新生代用于 GC 复制算法的空间
+  OLD_SPACE,   // 老生代常驻对象空间
+  CODE_SPACE,  // 老生代代码对象空间
+  MAP_SPACE,   // 老生代 map 对象
+  LO_SPACE,    // 老生代大空间对象
+  NEW_LO_SPACE,  // 新生代大空间对象
+
+  FIRST_SPACE = RO_SPACE,
+  LAST_SPACE = NEW_LO_SPACE,
+  FIRST_GROWABLE_PAGED_SPACE = OLD_SPACE,
+  LAST_GROWABLE_PAGED_SPACE = MAP_SPACE
+};
+```
+
+在老生代中，以下情况会先启动标记清除算法：
+
+- 某一个空间没有分块的时候
+- 空间中被对象超过一定限制
+- 空间不能保证新生代中的对象移动到老生代中
+
+在这个阶段中，会遍历堆中所有的对象，然后标记活的对象，在标记完成后，销毁所有没有被标记的对象。在标记大型对内存时，可能需要几百毫秒才能完成一次标记。这就会导致一些性能上的问题。为了解决这个问题，2011 年，V8 从 stop-the-world 标记切换到增量标志。在增量标记期间，GC 将标记工作分解为更小的模块，可以让 JS 应用逻辑在模块间隙执行一会，从而不至于让应用出现停顿情况。但在 2018 年，GC 技术又有了一个重大突破，这项技术名为并发标记。该技术可以让 GC 扫描和标记对象时，同时允许 JS 运行，你可以点击 [该博客](https://v8project.blogspot.com/2018/06/concurrent-marking.html) 详细阅读。
+
+清除对象后会造成堆内存出现碎片的情况，当碎片超过一定限制后会启动压缩算法。在压缩过程中，将活的对象像一端移动，直到所有对象都移动完成然后清理掉不需要的内存。
